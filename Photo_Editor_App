@@ -1,0 +1,160 @@
+import sys
+import cv2
+import numpy as np
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QAction, QFileDialog, QVBoxLayout, QWidget, QPushButton, QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QKeySequence, QTransform
+from PyQt5.QtCore import Qt
+
+class PhotoEditor(QMainWindow):
+    def _init_(self):
+        super(PhotoEditor, self)._init_()
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('Photo Editor')
+        self.setGeometry(100, 100, 800, 600)
+
+        # Create menu bar and add action
+        openFile = QAction('Open', self)
+        openFile.setShortcut('Ctrl+O')
+        openFile.triggered.connect(self.open_image)
+        menubar = self.menuBar()
+        fileMenu = menubar.addMenu('&File')
+        fileMenu.addAction(openFile)
+
+        # Create image viewer and layout
+        self.imageLabel = QLabel()
+        self.imageLabel.setBackgroundRole(QtGui.QPalette.Base)
+        self.imageLabel.setSizePolicy(QtWidgets.QSizePolicy.Ignored,
+                                      QtWidgets.QSizePolicy.Ignored)
+        self.imageLabel.setScaledContents(True)
+
+        self.scrollArea = QtWidgets.QScrollArea()
+        self.scrollArea.setBackgroundRole(QtGui.QPalette.Dark)
+        self.scrollArea.setWidget(self.imageLabel)
+        self.setCentralWidget(self.scrollArea)
+
+        # Create toolbar and add actions
+        tb = self.addToolBar("File")
+        
+        # Add other actions to the toolbar
+        rotateAction = QAction('Rotate', self)
+        rotateAction.triggered.connect(self.rotate_image)
+        tb.addAction(rotateAction)
+
+        flipHAction = QAction('Flip Horizontal', self)
+        flipHAction.triggered.connect(self.flip_horizontal)
+        tb.addAction(flipHAction)
+
+        flipVAction = QAction('Flip Vertical', self)
+        flipVAction.triggered.connect(self.flip_vertical)
+        tb.addAction(flipVAction)
+
+    def open_image(self):
+      fileName, _ = QFileDialog.getOpenFileName(self, "Open File",
+              QtCore.QDir.currentPath())
+      if fileName:
+          image = QImage(fileName)
+          if image.isNull():
+              QtWidgets.QMessageBox.information(self, "Image Viewer",
+                      "Cannot load %s." % fileName)
+              return
+
+          self.original_image = image
+          self.filtered_image = image.copy()
+          self.display_image(self.filtered_image)
+
+    def display_image(self, image):
+      if not image.isNull():
+          pixmap = QPixmap.fromImage(image)
+          self.imageLabel.setPixmap(pixmap)
+
+    def rotate_image(self):
+      if not self.filtered_image:
+          return
+
+      transform = QtGui.QTransform().rotate(90)
+      pixmap = QPixmap.fromImage(self.filtered_image).transformed(transform)
+      self.filtered_image = pixmap.toImage()
+      self.display_image(self.filtered_image)
+
+    def flip_horizontal(self):
+      if not self.filtered_image:
+          return
+
+      pixmap = QPixmap.fromImage(self.filtered_image).transformed(QTransform().scale(-1, 1))
+      self.filtered_image = pixmap.toImage()
+      self.display_image(self.filtered_image)
+
+    def flip_vertical(self):
+      if not self.filtered_image:
+          return
+
+      pixmap = QPixmap.fromImage(self.filtered_image).transformed(QTransform().scale(1,-1))
+      self.filtered_image = pixmap.toImage()
+      self.display_image(self.filtered_image)
+
+    def apply_blur(self):
+      if not self.original_image:
+          return
+
+      scene = QGraphicsScene()
+      pixmap_item = QGraphicsPixmapItem(QPixmap.fromImage(self.original_image))
+      scene.addItem(pixmap_item)
+
+      blur_effect = QGraphicsBlurEffect()
+      blur_effect.setBlurRadius(10)  # Adjust the blur radius as needed
+
+      pixmap_item.setGraphicsEffect(blur_effect)
+
+      image = QImage(self.original_image.size(), QImage.Format_ARGB32)
+      painter = QPainter(image)
+      scene.render(painter)
+      painter.end()
+
+      self.filtered_image = image.copy()
+      self.display_image(self.filtered_image)
+
+    def apply_sharpen(self):
+if self.original_image:
+            image_array = self.qimage_to_ndarray(self.original_image)
+            sharpened_image = cv2.filter2D(image_array, -1, self.get_sharpening_kernel())
+            self.filtered_image = self.ndarray_to_qimage(sharpened_image)
+            self.display_image(self.filtered_image)
+
+    def qimage_to_ndarray(self, image):
+        width = image.width()
+        height = image.height()
+        buffer = image.bits().asstring(width * height * 4)
+        return np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
+
+    def ndarray_to_qimage(self, array):
+        height, width, _ = array.shape
+        bytes_per_line = 4 * width
+        image = QImage(array.data, width, height, bytes_per_line, QImage.Format_ARGB32)
+        return image.copy()
+
+    def get_sharpening_kernel(self):
+        kernel = np.array([
+            [-1, -1, -1],
+            [-1,  9, -1],
+            [-1, -1, -1]
+        ], dtype=np.float32)
+        return kernel
+
+
+    def undo_filter(self):
+        if self.original_image:
+            self.filtered_image = self.original_image.copy()
+            self.display_image(self.filtered_image)
+
+    def cancel_changes(self):
+        sys.exit()
+
+
+if _name_ == "_main_":
+    app = QApplication(sys.argv)
+    window = PhotoEditor()
+    window.show()
+    sys.exit(app.exec_())
